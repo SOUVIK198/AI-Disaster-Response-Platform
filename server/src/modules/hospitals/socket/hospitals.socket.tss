@@ -1,0 +1,653 @@
+/**
+ * ------------------------------------------------------------------
+ * File: hospital.socket.ts
+ *
+ * Real-Time Hospital Events
+ *
+ * ------------------------------------------------------------------
+ */
+
+
+import {
+    Server,
+    Socket
+} from "socket.io";
+
+
+
+import jwt from "jsonwebtoken";
+
+
+
+
+
+
+class HospitalSocket {
+
+
+    private io:Server;
+
+
+
+
+    constructor(
+        io:Server
+    ){
+
+        this.io = io;
+
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Socket Authentication
+     */
+    private authenticate(){
+
+
+        this.io.use(
+
+            (socket,next)=>{
+
+
+                try{
+
+
+                    const token =
+
+                    socket.handshake
+                    .auth
+                    .token;
+
+
+
+
+                    if(!token){
+
+                        return next(
+
+                            new Error(
+                                "Authentication required"
+                            )
+
+                        );
+
+                    }
+
+
+
+
+
+
+                    const user:any =
+
+                    jwt.verify(
+
+                        token,
+
+                        process.env.JWT_SECRET!
+
+                    );
+
+
+
+
+
+                    socket.data.user = user;
+
+
+
+
+                    next();
+
+
+
+                }
+
+                catch(error){
+
+
+                    next(
+
+                        new Error(
+                            "Invalid token"
+                        )
+
+                    );
+
+
+                }
+
+
+            }
+
+        );
+
+
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Initialize Socket
+     */
+    initialize(){
+
+
+
+        this.authenticate();
+
+
+
+
+        this.io.on(
+
+            "connection",
+
+            (socket:Socket)=>{
+
+
+                console.log(
+
+                    "Hospital socket connected:",
+
+                    socket.id
+
+                );
+
+
+
+
+                this.joinHospitalRoom(
+
+                    socket
+
+                );
+
+
+
+
+                this.handleEvents(
+
+                    socket
+
+                );
+
+
+
+            }
+
+        );
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Join hospital rooms
+     */
+    private joinHospitalRoom(
+        socket:Socket
+    ){
+
+
+        const user =
+
+        socket.data.user;
+
+
+
+
+        if(!user){
+
+            return;
+
+        }
+
+
+
+
+        /**
+         * Hospital Admin
+         */
+        if(
+
+            user.role ===
+            "HOSPITAL_ADMIN"
+
+        ){
+
+
+            socket.join(
+
+                `hospital:${user.hospitalId}`
+
+            );
+
+
+        }
+
+
+
+
+
+
+        /**
+         * Doctors/Nurses
+         */
+        if(
+
+            [
+
+                "DOCTOR",
+
+                "NURSE"
+
+            ]
+
+            .includes(
+                user.role
+            )
+
+        ){
+
+
+            socket.join(
+
+                `medical:${user.hospitalId}`
+
+            );
+
+
+        }
+
+
+
+
+
+
+
+        /**
+         * Disaster Command Center
+         */
+        if(
+
+            user.role==="ADMIN"
+
+        ){
+
+
+            socket.join(
+
+                "hospital-admins"
+
+            );
+
+
+        }
+
+
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Handle Incoming Events
+     */
+    private handleEvents(
+        socket:Socket
+    ){
+
+
+
+        socket.on(
+
+            "join_hospital",
+
+            (hospitalId:string)=>{
+
+
+                socket.join(
+
+                    `hospital:${hospitalId}`
+
+                );
+
+
+            }
+
+        );
+
+
+
+
+        socket.on(
+
+            "disconnect",
+
+            ()=>{
+
+
+                console.log(
+
+                    "Hospital socket disconnected"
+
+                );
+
+
+            }
+
+        );
+
+
+
+    }
+
+
+
+}
+
+
+
+export default HospitalSocket;
+/**
+ * Send Bed Availability Update
+ */
+emitBedUpdate(
+    hospitalId:string,
+    data:any
+){
+
+
+    this.io.to(
+
+        `hospital:${hospitalId}`
+
+    )
+
+    .emit(
+
+        "bed_update",
+
+        {
+
+            hospitalId,
+
+            data,
+
+            timestamp:new Date()
+
+        }
+
+    );
+
+
+}
+
+
+
+
+
+
+
+
+
+/**
+ * Send ICU Capacity Update
+ */
+emitICUUpdate(
+    hospitalId:string,
+    data:any
+){
+
+
+    this.io.to(
+
+        `hospital:${hospitalId}`
+
+    )
+
+    .emit(
+
+        "icu_update",
+
+        {
+
+            hospitalId,
+
+            data,
+
+            timestamp:new Date()
+
+        }
+
+    );
+
+
+}
+
+
+
+
+
+
+
+
+
+/**
+ * Blood Shortage Alert
+ */
+emitBloodAlert(
+    hospitalId:string,
+    bloodGroup:string,
+    units:number
+){
+
+
+    this.io.to(
+
+        `hospital:${hospitalId}`
+
+    )
+
+    .emit(
+
+        "blood_alert",
+
+        {
+
+
+            hospitalId,
+
+
+            bloodGroup,
+
+
+            availableUnits:units,
+
+
+            message:
+
+            `${bloodGroup} blood stock is low`,
+
+
+
+            timestamp:new Date()
+
+
+        }
+
+    );
+
+
+}
+
+
+
+
+
+
+
+
+
+/**
+ * Ambulance Location Update
+ */
+emitAmbulanceLocation(
+    hospitalId:string,
+    ambulanceId:string,
+    location:any
+){
+
+
+    this.io.to(
+
+        `hospital:${hospitalId}`
+
+    )
+
+    .emit(
+
+        "ambulance_location",
+
+        {
+
+
+            ambulanceId,
+
+
+            location,
+
+
+            timestamp:new Date()
+
+
+        }
+
+    );
+
+
+}
+
+
+
+
+
+
+
+
+
+/**
+ * Emergency Broadcast
+ *
+ * Used during disasters
+ */
+broadcastEmergency(
+    data:any
+){
+
+
+
+    this.io.emit(
+
+        "emergency_broadcast",
+
+        {
+
+
+            message:
+
+            "Emergency alert",
+
+
+
+            data,
+
+
+
+            timestamp:new Date()
+
+
+        }
+
+    );
+
+
+}
+
+
+
+
+
+
+
+
+
+/**
+ * Incident -> Hospital Notification
+ */
+notifyHospitalFromIncident(
+    hospitalId:string,
+    incident:any
+){
+
+
+
+    this.io.to(
+
+        `hospital:${hospitalId}`
+
+    )
+
+    .emit(
+
+        "new_incident",
+
+        {
+
+
+            incident,
+
+
+            priority:
+
+            incident.severity,
+
+
+
+            timestamp:new Date()
+
+
+        }
+
+    );
+
+
+}
